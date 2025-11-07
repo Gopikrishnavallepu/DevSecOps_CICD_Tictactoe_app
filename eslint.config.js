@@ -18,7 +18,10 @@ export default [
     files: ['**/*.{ts,tsx}'],
     languageOptions: {
       parser: tsParser,
-      parserOptions: { project: ['./tsconfig.json'] }, // Ensure this path is correct
+  // Point directly at the tsconfig files that actually include the source.
+  // Using the referenced tsconfig (tsconfig.json) can fail with the
+  // TypeScript ESLint parser, so list the concrete configs instead.
+  parserOptions: { project: ['./tsconfig.app.json', './tsconfig.node.json'] },
       ecmaVersion: 2020,
       globals: globals.browser,
     },
