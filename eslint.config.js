@@ -2,29 +2,45 @@ import js from '@eslint/js';
 import globals from 'globals';
 import reactHooks from 'eslint-plugin-react-hooks';
 import reactRefresh from 'eslint-plugin-react-refresh';
-import tseslint from 'typescript-eslint'; // Note: This package handles both the parser and plugin/configs
+// Import the components you already have installed
+import tsParser from '@typescript-eslint/parser';
+import tsPlugin from '@typescript-eslint/eslint-plugin';
 
-export default tseslint.config(
+export default [
+  // 1. Ignore files
   { ignores: ['dist'] },
+  
+  // 2. Base recommended JS rules
+  js.configs.recommended,
+  
+  // 3. Main configuration for TypeScript/TSX files
   {
-    extends: [js.configs.recommended, ...tseslint.configs.recommended],
     files: ['**/*.{ts,tsx}'],
     languageOptions: {
+      parser: tsParser,
+      parserOptions: { project: ['./tsconfig.json'] }, // Ensure this path is correct
       ecmaVersion: 2020,
       globals: globals.browser,
     },
+    
     plugins: {
       'react-hooks': reactHooks,
       'react-refresh': reactRefresh,
+      // Register the plugin with its standard name
+      '@typescript-eslint': tsPlugin, 
     },
+    
     rules: {
-      // 1. Inherit all recommended rules from react-hooks
+      // Bring in recommended rules from the TS plugin
+      ...tsPlugin.configs.recommended.rules,
+      
+      // Inherit all recommended rules from react-hooks
       ...reactHooks.configs.recommended.rules, 
       
-      // 2. CRITICAL FIX: Disable the base rule, which conflicts with TS
+      // CRITICAL FIX: Disable the base rule
       'no-unused-expressions': 'off', 
       
-      // 3. CRITICAL FIX: Enable the TypeScript-aware version with required options
+      // CRITICAL FIX: Enable the TypeScript-aware version
       '@typescript-eslint/no-unused-expressions': [
         'error',
         {
@@ -34,11 +50,11 @@ export default tseslint.config(
         },
       ],
 
-      // 4. Existing react-refresh rule
+      // Existing react-refresh rule
       'react-refresh/only-export-components': [
         'warn',
         { allowConstantExport: true },
       ],
     },
-  }
-);
+  },
+];
