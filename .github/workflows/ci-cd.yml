@@ -82,38 +82,10 @@ jobs:
       IMAGE_NAME: ${{ github.repository }}
     outputs:
       image_tag: ${{ steps.set_output.outputs.image_tag }}
-      image_ref: ${{ steps.set_output.outputs.image_ref }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
       
-      - name: Compute lowercased image name and image ref
-        id: image_vars
-        run: |
-          # Lowercase the owner/repo so it's a valid docker image name
-          IMAGE_NAME_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
-          echo "IMAGE_NAME_LOWER=${IMAGE_NAME_LOWER}" >> $GITHUB_ENV
-
-          # Build the full image reference we will use for scanning/pushing
-          IMAGE_REF="${{ env.REGISTRY }}/${IMAGE_NAME_LOWER}:sha-${{ github.sha }}"
-          echo "IMAGE_REF=${IMAGE_REF}" >> $GITHUB_ENV
-
-          # Export as step outputs so expressions can reference them in later steps
-          echo "image_name_lower=${IMAGE_NAME_LOWER}" >> $GITHUB_OUTPUT
-          echo "image_ref=${IMAGE_REF}" >> $GITHUB_OUTPUT
-
-          echo "Computed IMAGE_NAME_LOWER=${IMAGE_NAME_LOWER}"
-          echo "Computed IMAGE_REF=${IMAGE_REF}"
-
-      - name: Verify image ref is lowercase (fail early)
-        run: |
-          if echo "${{ steps.image_vars.outputs.image_ref }}" | grep -q '[A-Z]'; then
-            echo "ERROR: IMAGE_REF contains uppercase characters: ${{ steps.image_vars.outputs.image_ref }}"
-            exit 1
-          else
-            echo "IMAGE_REF is lowercase: ${{ steps.image_vars.outputs.image_ref }}"
-          fi
-
       - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
@@ -134,20 +106,11 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ steps.image_vars.outputs.image_name_lower }}
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=sha,format=long
             type=ref,event=branch
             latest
-
-      - name: Set IMAGE_REF from metadata (first tag)
-        id: set_image_ref
-        run: |
-          # meta.outputs.tags is a newline-separated list of full image refs
-          IMAGE_REF=$(echo "${{ steps.meta.outputs.tags }}" | head -n1)
-          echo "IMAGE_REF=${IMAGE_REF}" >> $GITHUB_ENV
-          echo "image_ref=${IMAGE_REF}" >> $GITHUB_OUTPUT
-          echo "Computed IMAGE_REF from meta: ${IMAGE_REF}"
       
       - name: Build Docker image
         uses: docker/build-push-action@v5
@@ -161,8 +124,7 @@ jobs:
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         with:
-          # Use the exact tag produced by docker/metadata-action (first tag)
-          image-ref: ${{ steps.set_image_ref.outputs.image_ref }}
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
           format: 'table'
           exit-code: '1'
           ignore-unfixed: true
@@ -179,11 +141,7 @@ jobs:
       
       - name: Set image tag output
         id: set_output
-        run: |
-          # short tag for downstream usage
-          echo "image_tag=$(echo ${{ github.sha }} | cut -c1-7)" >> $GITHUB_OUTPUT
-          # also expose the full image ref as a job output (from set_image_ref)
-          echo "image_ref=${{ steps.set_image_ref.outputs.image_ref }}" >> $GITHUB_OUTPUT
+        run: echo "image_tag=$(echo ${{ github.sha }} | cut -c1-7)" >> $GITHUB_OUTPUT
 
   update-k8s:
     name: Update Kubernetes Deployment
@@ -207,12 +165,9 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           REGISTRY: ghcr.io
         run: |
-          # Lowercase the repository to form a valid image name
-          GITHUB_REPOSITORY_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
-
-          # Define the new image with tag (use lowercased repo)
-          NEW_IMAGE="${REGISTRY}/${GITHUB_REPOSITORY_LOWER}:${IMAGE_TAG}"
-
+          # Define the new image with tag
+          NEW_IMAGE="${REGISTRY}/${GITHUB_REPOSITORY}:${IMAGE_TAG}"
+          
           # Update the deployment file directly
           sed -i "s|image: ${REGISTRY}/.*|image: ${NEW_IMAGE}|g" kubernetes/deployment.yaml
           
